@@ -8,13 +8,13 @@
 
 import AbortController from 'abort-controller';
 import * as ConfigStore from 'configstore';
-import {createHash} from 'crypto';
+import { createHash } from 'crypto';
 import * as extend from 'extend';
-import {GaxiosOptions, GaxiosPromise, GaxiosResponse} from 'gaxios';
+import { GaxiosOptions, GaxiosPromise, GaxiosResponse } from 'gaxios';
 import * as gaxios from 'gaxios';
-import {GoogleAuth, GoogleAuthOptions} from 'google-auth-library';
+import { GoogleAuth, GoogleAuthOptions } from 'google-auth-library';
 import * as Pumpify from 'pumpify';
-import {PassThrough, Transform} from 'stream';
+import { PassThrough, Transform } from 'stream';
 import * as streamEvents from 'stream-events';
 
 const TERMINATED_UPLOAD_STATUS_CODE = 410;
@@ -198,7 +198,7 @@ export class Upload extends Pumpify {
   file: string;
   apiEndpoint: string;
   baseURI: string;
-  authConfig?: {scopes?: string[]};
+  authConfig?: { scopes?: string[] };
   /*
    * Defaults to GoogleAuth and gets automatically overridden if an
    * emulator context is detected.
@@ -320,16 +320,13 @@ export class Upload extends Pumpify {
     });
   }
 
-  createURI(): Promise<string>;
-  createURI(callback: CreateUriCallback): void;
-  createURI(callback?: CreateUriCallback): void | Promise<string> {
-    if (!callback) {
-      return this.createURIAsync();
-    }
-    this.createURIAsync().then(r => callback(null, r), callback);
-  }
-
-  protected async createURIAsync(): Promise<string> {
+  /**
+   * This method (just) creates a resumable upload url without relying on configstore to store it: see https://github.com/googleapis/nodejs-storage/issues/1489
+   * Use this method if just need the URI and don't intent to use other funcionality from Upload
+   * like startUploading/continueUploading etc
+   * @returns {Promise<string>} The resumable upload uri
+   */
+  async createResumableUploadURIAsync(): Promise<string> {
     const metadata = this.metadata;
 
     const reqOpts: GaxiosOptions = {
@@ -373,8 +370,22 @@ export class Upload extends Pumpify {
 
     const resp = await this.makeRequest(reqOpts);
     const uri = resp.headers.location;
+    return uri;
+  }
+
+  createURI(): Promise<string>;
+  createURI(callback: CreateUriCallback): void;
+  createURI(callback?: CreateUriCallback): void | Promise<string> {
+    if (!callback) {
+      return this.createURIAsync();
+    }
+    this.createURIAsync().then(r => callback(null, r), callback);
+  }
+
+  protected async createURIAsync(): Promise<string> {
+    const uri = await this.createResumableUploadURIAsync();
     this.uri = uri;
-    this.set({uri});
+    this.set({ uri });
     this.offset = 0;
     return uri;
   }
@@ -487,7 +498,7 @@ export class Upload extends Pumpify {
 
       if (!cachedFirstChunk) {
         // This is a new upload. Cache the first chunk.
-        this.set({uri: this.uri, firstChunk});
+        this.set({ uri: this.uri, firstChunk });
       } else {
         // this continues an upload in progress. check if the bytes are the same
         cachedFirstChunk = Buffer.from(cachedFirstChunk);
@@ -517,7 +528,7 @@ export class Upload extends Pumpify {
     const opts: GaxiosOptions = {
       method: 'PUT',
       url: this.uri!,
-      headers: {'Content-Length': 0, 'Content-Range': 'bytes */*'},
+      headers: { 'Content-Length': 0, 'Content-Range': 'bytes */*' },
     };
     try {
       const resp = await this.makeRequest(opts);
@@ -688,7 +699,7 @@ export function createURI(
 ): void | Promise<string> {
   const up = new Upload(cfg);
   if (!callback) {
-    return up.createURI();
+    return up.createResumableUploadURIAsync();
   }
-  up.createURI().then(r => callback(null, r), callback);
+  up.createResumableUploadURIAsync().then(r => callback(null, r), callback);
 }
